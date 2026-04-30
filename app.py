@@ -110,38 +110,76 @@ class ParagraphBlock:
 
 
 # =========================================================
-# 字体：Windows 默认微软雅黑
+# 字体：本地优先微软雅黑；云端优先 Noto CJK
 # =========================================================
 
 FONT_CACHE = {}
 
 
 def find_font_path(bold=False) -> Optional[str]:
+    """
+    Windows 本地：优先微软雅黑。
+    Streamlit Cloud/Linux：优先 Noto Sans CJK。
+    Mac：尝试 PingFang。
+    """
+
+    # 允许你自己放字体文件到项目 fonts 文件夹
+    project_regular = [
+        "fonts/msyh.ttc",
+        "fonts/msyh.ttf",
+        "fonts/NotoSansCJK-Regular.ttc",
+        "fonts/NotoSansSC-Regular.otf",
+        "fonts/PingFang.ttc",
+        "fonts/PingFangSC-Regular.ttf",
+    ]
+
+    project_bold = [
+        "fonts/msyhbd.ttc",
+        "fonts/msyhbd.ttf",
+        "fonts/NotoSansCJK-Bold.ttc",
+        "fonts/NotoSansSC-Bold.otf",
+        "fonts/PingFang.ttc",
+        "fonts/PingFangSC-Semibold.ttf",
+    ]
+
     if os.name == "nt":
-        if bold:
-            candidates = [
-                r"C:\Windows\Fonts\msyhbd.ttc",
-                r"C:\Windows\Fonts\msyhbd.ttf",
-                r"C:\Windows\Fonts\msyh.ttc",
-            ]
-        else:
-            candidates = [
-                r"C:\Windows\Fonts\msyh.ttc",
-                r"C:\Windows\Fonts\msyh.ttf",
-            ]
+        system_regular = [
+            r"C:\Windows\Fonts\msyh.ttc",
+            r"C:\Windows\Fonts\msyh.ttf",
+            r"C:\Windows\Fonts\simhei.ttf",
+        ]
+
+        system_bold = [
+            r"C:\Windows\Fonts\msyhbd.ttc",
+            r"C:\Windows\Fonts\msyhbd.ttf",
+            r"C:\Windows\Fonts\msyh.ttc",
+            r"C:\Windows\Fonts\simhei.ttf",
+        ]
     else:
-        if bold:
-            candidates = [
-                "/System/Library/Fonts/PingFang.ttc",
-                "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
-                "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
-            ]
-        else:
-            candidates = [
-                "/System/Library/Fonts/PingFang.ttc",
-                "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-                "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-            ]
+        system_regular = [
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.otf",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.otf",
+            "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf",
+            "/usr/share/fonts/truetype/arphic/uming.ttc",
+            "/System/Library/Fonts/PingFang.ttc",
+            "/System/Library/Fonts/STHeiti Light.ttc",
+        ]
+
+        system_bold = [
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.otf",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.otf",
+            "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Bold.otf",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/arphic/uming.ttc",
+            "/System/Library/Fonts/PingFang.ttc",
+            "/System/Library/Fonts/STHeiti Medium.ttc",
+        ]
+
+    candidates = project_bold + system_bold if bold else project_regular + system_regular
 
     for path in candidates:
         if os.path.exists(path):
@@ -158,11 +196,14 @@ def get_font(size: int, bold: bool = False):
 
     path = find_font_path(bold)
 
-    if path:
-        font = ImageFont.truetype(path, size)
-    else:
-        font = ImageFont.load_default()
+    if not path:
+        raise RuntimeError(
+            "没有找到中文字体。"
+            "如果是 Streamlit Cloud，请确认仓库里有 packages.txt，内容包含 fonts-noto-cjk 和 fontconfig。"
+            "如果是本地 Windows，请确认系统有微软雅黑。"
+        )
 
+    font = ImageFont.truetype(path, size)
     FONT_CACHE[key] = font
     return font
 
@@ -757,7 +798,7 @@ def render_pages(blocks: List[ParagraphBlock]) -> List[Image.Image]:
         else:
             y += block.space_before_px
 
-        # 标题用较窄宽度，避免图二那种标题拉太开
+        # 标题用较窄宽度，避免标题拉太开
         if block.kind == "title":
             lines = wrap_chunks(block.chunks, TITLE_W)
             draw_x = TITLE_LEFT
@@ -848,7 +889,7 @@ st.markdown(
     """
 **Word 设置规则：**
 
-- `标题 / 标题1`：转成参考图一那种大标题版式。
+- `标题 / 标题1`：转成备忘录大标题版式。
 - `标题2`：转成一级小标题。
 - `标题3`：转成二级小标题。
 - 正文：尽量读取 Word 的字号、行距、段前、段后。
@@ -859,7 +900,7 @@ st.markdown(
 - 黄色高亮：转成黄色荧光笔线。
 - 蓝色高亮：转成蓝色圆角底块。
 - 绿色高亮：转成绿色荧光线。
-- 默认字体：微软雅黑。
+- 本地 Windows 默认使用微软雅黑；网页部署默认使用 Noto CJK 中文字体。
 """
 )
 
