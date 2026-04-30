@@ -1,10 +1,9 @@
 import os
 import io
-import math
 import zipfile
 import tempfile
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple
 
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
@@ -19,7 +18,7 @@ from docx.shared import Length
 PAGE_W = 2160
 PAGE_H = 2880
 
-BG_IMAGE_PATH = "memo_bg.png"   # 你可以把刚才生成的背景图下载后命名为 memo_bg.png 放进项目目录
+BG_IMAGE_PATH = "memo_bg.png"
 BG_COLOR = (255, 255, 255)
 
 TEXT_COLOR = "#111111"
@@ -33,43 +32,50 @@ BOTTOM = 120
 
 CONTENT_W = PAGE_W - LEFT - RIGHT
 
-# Word 里的 pt 转到高清图里的 px 的倍率
-# 这个值决定：Word 里 16pt 字，到图片里大概多大。
-# 如果整体字太小，改大一点，比如 3.6；太大就改小，比如 3.0。
+# 标题专用区域：更像参考图一，不让标题铺太满
+TITLE_LEFT = LEFT
+TITLE_RIGHT = 300
+TITLE_W = PAGE_W - TITLE_LEFT - TITLE_RIGHT
+
+# Word pt 转高清图 px 的倍率
+# 正文如果整体太大，改 3.0；太小，改 3.5
 PT_TO_PX_SCALE = 3.25
 
-# 默认字号兜底。Word 没有设置字号时用这里。
+
+# =========================================================
+# 默认模板字号 / 间距
+# 标题类走固定模板；正文尽量读 Word
+# =========================================================
+
 DEFAULT_FONT_PX = {
-    "title": 104,
-    "h1": 76,
-    "h2": 68,
-    "body": 62,
-    "blank": 62,
+    "title": 86,
+    "h1": 72,
+    "h2": 66,
+    "body": 58,
+    "blank": 58,
 }
 
-# 默认段落间距兜底。Word 没有设置段前段后时用这里。
 DEFAULT_SPACE_AFTER = {
-    "title": 42,
-    "h1": 28,
-    "h2": 24,
-    "body": 26,
-    "blank": 34,
+    "title": 34,
+    "h1": 24,
+    "h2": 20,
+    "body": 22,
+    "blank": 30,
 }
 
 DEFAULT_SPACE_BEFORE = {
-    "title": 16,
-    "h1": 42,
-    "h2": 34,
+    "title": 8,
+    "h1": 34,
+    "h2": 26,
     "body": 0,
     "blank": 0,
 }
 
-# 默认行距兜底。Word 没有设置行距时用这里。
 DEFAULT_LINE_RATIO = {
-    "title": 1.16,
-    "h1": 1.34,
-    "h2": 1.38,
-    "body": 1.55,
+    "title": 1.10,
+    "h1": 1.28,
+    "h2": 1.32,
+    "body": 1.52,
     "blank": 1.0,
 }
 
@@ -104,7 +110,7 @@ class ParagraphBlock:
 
 
 # =========================================================
-# 字体：默认微软雅黑
+# 字体：Windows 默认微软雅黑
 # =========================================================
 
 FONT_CACHE = {}
@@ -185,7 +191,8 @@ def get_para_kind(p, index: int) -> str:
 
     text = p.text.strip()
 
-    if index == 0 and text and len(text) <= 36:
+    # 第一段较短时自动当大标题
+    if index == 0 and text and len(text) <= 40:
         return "title"
 
     return "body"
@@ -229,10 +236,14 @@ def get_effective_para_format(p):
 
 
 def calc_line_height_px(p, kind: str, font_px: int) -> int:
+    # 标题 / 小标题统一按模板，不被 Word 原始行距带跑
+    if kind in ["title", "h1", "h2"]:
+        return int(font_px * DEFAULT_LINE_RATIO.get(kind, 1.2))
+
     line_spacing, _, _ = get_effective_para_format(p)
 
     if line_spacing is None:
-        return int(font_px * DEFAULT_LINE_RATIO.get(kind, 1.55))
+        return int(font_px * DEFAULT_LINE_RATIO.get(kind, 1.52))
 
     # Word 倍数行距，例如 1.0 / 1.15 / 1.5 / 2.0
     if isinstance(line_spacing, float):
@@ -243,10 +254,16 @@ def calc_line_height_px(p, kind: str, font_px: int) -> int:
     if px:
         return px
 
-    return int(font_px * DEFAULT_LINE_RATIO.get(kind, 1.55))
+    return int(font_px * DEFAULT_LINE_RATIO.get(kind, 1.52))
 
 
 def calc_space_before_after_px(p, kind: str) -> Tuple[int, int]:
+    # 标题 / 小标题统一走模板，保证像参考图
+    if kind in ["title", "h1", "h2"]:
+        before_px = DEFAULT_SPACE_BEFORE.get(kind, 0)
+        after_px = DEFAULT_SPACE_AFTER.get(kind, 20)
+        return int(before_px), int(after_px)
+
     _, space_before, space_after = get_effective_para_format(p)
 
     before_px = length_to_px(space_before)
@@ -256,12 +273,16 @@ def calc_space_before_after_px(p, kind: str) -> Tuple[int, int]:
         before_px = DEFAULT_SPACE_BEFORE.get(kind, 0)
 
     if after_px is None:
-        after_px = DEFAULT_SPACE_AFTER.get(kind, 26)
+        after_px = DEFAULT_SPACE_AFTER.get(kind, 22)
 
     return int(before_px), int(after_px)
 
 
 def get_effective_run_font_size_px(run, p, kind: str) -> int:
+    # 标题 / 小标题不跟 Word 原字号走，直接用模板字号
+    if kind in ["title", "h1", "h2"]:
+        return DEFAULT_FONT_PX[kind]
+
     size = run.font.size
 
     if size is not None:
@@ -270,7 +291,6 @@ def get_effective_run_font_size_px(run, p, kind: str) -> int:
         except Exception:
             pass
 
-    # run 没有字号，读段落样式字号
     try:
         if p.style and p.style.font and p.style.font.size:
             return max(20, int(p.style.font.size.pt * PT_TO_PX_SCALE))
@@ -379,16 +399,11 @@ def parse_docx(file_path: str) -> List[ParagraphBlock]:
                 if not text:
                     continue
 
-                # python-docx 中，Shift+Enter 通常会以 \n 形式保留在 run.text 里
                 bold = bool(run.bold) if run.bold is not None else para_default_bold
                 underline = bool(run.underline)
                 highlight = map_highlight(run.font.highlight_color)
 
                 font_px = get_effective_run_font_size_px(run, p, kind)
-
-                # 标题、小标题如果 Word 没有明确设置字号，用默认大字号
-                if run.font.size is None:
-                    font_px = default_font_px
 
                 chunks.append(
                     Chunk(
@@ -410,8 +425,10 @@ def parse_docx(file_path: str) -> List[ParagraphBlock]:
                 )
             )
 
-        # 用这一段里最大的字号来算行高
-        max_font_px = max([c.font_size_px or default_font_px for c in chunks], default=default_font_px)
+        max_font_px = max(
+            [c.font_size_px or default_font_px for c in chunks],
+            default=default_font_px,
+        )
 
         line_height_px = calc_line_height_px(p, kind, max_font_px)
         space_before_px, space_after_px = calc_space_before_after_px(p, kind)
@@ -533,7 +550,6 @@ def wrap_chunks(chunks: List[Chunk], max_width: int) -> List[List[Chunk]]:
                     continue
 
             if w > max_width:
-                # 超长英文强制拆字
                 for ch in token:
                     font = get_font(font_size, tk.bold)
                     cw = text_width(ch, font)
@@ -592,7 +608,8 @@ def draw_default_notes_background() -> Image.Image:
         outline=color,
         width=icon_w,
     )
-    # 开口
+
+    # 顶部开口
     draw.line((sx - 8, sy + 28, sx + 22, sy + 28), fill=BG_COLOR, width=18)
 
     # 箭头
@@ -628,17 +645,18 @@ def new_page() -> Tuple[Image.Image, ImageDraw.ImageDraw]:
 
 
 # =========================================================
-# 绘制文字：先画底线/高亮，再画文字
+# 绘制文字：先画底线 / 高亮，再画字
 # =========================================================
 
 def get_line_max_font_size(line: List[Chunk]) -> int:
-    return max([c.font_size_px or DEFAULT_FONT_PX["body"] for c in line], default=DEFAULT_FONT_PX["body"])
+    return max(
+        [c.font_size_px or DEFAULT_FONT_PX["body"] for c in line],
+        default=DEFAULT_FONT_PX["body"],
+    )
 
 
 def draw_line(draw: ImageDraw.ImageDraw, line: List[Chunk], x: int, y: int):
     cursor_x = x
-
-    max_font = get_line_max_font_size(line)
 
     # 第一遍：画高亮和下划线，保证置底
     for chunk in line:
@@ -662,7 +680,6 @@ def draw_line(draw: ImageDraw.ImageDraw, line: List[Chunk], x: int, y: int):
                 draw.rounded_rectangle(rect, radius=36, fill=color)
 
             elif chunk.highlight == "yellow":
-                # 黄色荧光笔：厚一点，靠文字下半部分
                 rect = (
                     cursor_x - 10,
                     y + int(font_size * 0.56),
@@ -735,23 +752,35 @@ def render_pages(blocks: List[ParagraphBlock]) -> List[Image.Image]:
             y += block.space_after_px
             continue
 
-        y += block.space_before_px
+        if block.kind == "title":
+            y += max(block.space_before_px, 24)
+        else:
+            y += block.space_before_px
 
-        lines = wrap_chunks(block.chunks, CONTENT_W)
+        # 标题用较窄宽度，避免图二那种标题拉太开
+        if block.kind == "title":
+            lines = wrap_chunks(block.chunks, TITLE_W)
+            draw_x = TITLE_LEFT
+        else:
+            lines = wrap_chunks(block.chunks, CONTENT_W)
+            draw_x = LEFT
 
         line_height = block.line_height_px or int(DEFAULT_FONT_PX["body"] * DEFAULT_LINE_RATIO["body"])
 
         for line in lines:
-            # 当前行实际最大字号比行高还大时，自动兜底，避免重叠
             line_max_font = get_line_max_font_size(line)
-            effective_line_height = max(line_height, int(line_max_font * 1.22))
+            effective_line_height = max(line_height, int(line_max_font * 1.18))
 
             if y + effective_line_height > PAGE_H - BOTTOM:
                 pages.append(img)
                 img, draw = new_page()
-                y = CONTENT_TOP + block.space_before_px
 
-            draw_line(draw, line, LEFT, y)
+                if block.kind == "title":
+                    y = CONTENT_TOP + max(block.space_before_px, 24)
+                else:
+                    y = CONTENT_TOP + block.space_before_px
+
+            draw_line(draw, line, draw_x, y)
             y += effective_line_height
 
         y += block.space_after_px
@@ -811,7 +840,7 @@ st.set_page_config(
 )
 
 st.title("Word 转高清备忘录长图")
-st.caption("固定 2160×2880，3:4；读取 Word 行距、段前、段后、加粗、下划线和高亮。")
+st.caption("固定 2160×2880，3:4；标题走备忘录模板，正文读取 Word 行距、段前、段后。")
 
 uploaded_file = st.file_uploader("上传 Word 文件（.docx）", type=["docx"])
 
@@ -819,14 +848,18 @@ st.markdown(
     """
 **Word 设置规则：**
 
-- 直接按 `Enter`：新段落，程序会读取 Word 的段前 / 段后。
+- `标题 / 标题1`：转成参考图一那种大标题版式。
+- `标题2`：转成一级小标题。
+- `标题3`：转成二级小标题。
+- 正文：尽量读取 Word 的字号、行距、段前、段后。
+- 直接按 `Enter`：新段落，程序会读取段前 / 段后。
 - 按 `Shift + Enter`：同段换行，只走普通行距。
 - 加粗：保留加粗。
 - 下划线：转成粉色荧光线。
 - 黄色高亮：转成黄色荧光笔线。
 - 蓝色高亮：转成蓝色圆角底块。
 - 绿色高亮：转成绿色荧光线。
-- 字体默认按微软雅黑渲染。
+- 默认字体：微软雅黑。
 """
 )
 
