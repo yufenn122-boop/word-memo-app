@@ -37,45 +37,44 @@ TITLE_LEFT = LEFT
 TITLE_RIGHT = 300
 TITLE_W = PAGE_W - TITLE_LEFT - TITLE_RIGHT
 
-# Word pt 转高清图 px 的倍率
-# 正文如果整体太大，改 3.0；太小，改 3.5
-PT_TO_PX_SCALE = 3.25
+# 这个版本不再让 Word 原字号决定最终字号
+# Word 主要控制：段落结构、加粗、下划线、高亮、段前段后
+PT_TO_PX_SCALE = 5.2
 
 
 # =========================================================
 # 默认模板字号 / 间距
-# 标题类走固定模板；正文尽量读 Word
 # =========================================================
 
 DEFAULT_FONT_PX = {
-    "title": 86,
-    "h1": 72,
-    "h2": 66,
-    "body": 58,
-    "blank": 58,
+    "title": 118,
+    "h1": 82,
+    "h2": 74,
+    "body": 72,
+    "blank": 72,
 }
 
 DEFAULT_SPACE_AFTER = {
-    "title": 34,
-    "h1": 24,
-    "h2": 20,
-    "body": 22,
-    "blank": 30,
+    "title": 44,
+    "h1": 34,
+    "h2": 30,
+    "body": 32,
+    "blank": 44,
 }
 
 DEFAULT_SPACE_BEFORE = {
     "title": 8,
-    "h1": 34,
-    "h2": 26,
+    "h1": 42,
+    "h2": 34,
     "body": 0,
     "blank": 0,
 }
 
 DEFAULT_LINE_RATIO = {
-    "title": 1.10,
-    "h1": 1.28,
-    "h2": 1.32,
-    "body": 1.52,
+    "title": 1.12,
+    "h1": 1.35,
+    "h2": 1.38,
+    "body": 1.62,
     "blank": 1.0,
 }
 
@@ -110,7 +109,7 @@ class ParagraphBlock:
 
 
 # =========================================================
-# 字体：本地优先微软雅黑；云端优先 Noto CJK
+# 字体：本地优先微软雅黑；云端优先文泉驿 / Noto CJK
 # =========================================================
 
 FONT_CACHE = {}
@@ -119,7 +118,7 @@ FONT_CACHE = {}
 def find_font_path(bold=False) -> Optional[str]:
     """
     Windows 本地：优先微软雅黑。
-    Streamlit Cloud/Linux：优先 Noto Sans CJK。
+    Streamlit Cloud/Linux：优先文泉驿微米黑，其次 Noto Sans CJK。
     Mac：尝试 PingFang。
     """
 
@@ -127,6 +126,7 @@ def find_font_path(bold=False) -> Optional[str]:
     project_regular = [
         "fonts/msyh.ttc",
         "fonts/msyh.ttf",
+        "fonts/wqy-microhei.ttc",
         "fonts/NotoSansCJK-Regular.ttc",
         "fonts/NotoSansSC-Regular.otf",
         "fonts/PingFang.ttc",
@@ -136,8 +136,10 @@ def find_font_path(bold=False) -> Optional[str]:
     project_bold = [
         "fonts/msyhbd.ttc",
         "fonts/msyhbd.ttf",
+        "fonts/wqy-microhei.ttc",
         "fonts/NotoSansCJK-Bold.ttc",
         "fonts/NotoSansSC-Bold.otf",
+        "fonts/NotoSansCJK-Regular.ttc",
         "fonts/PingFang.ttc",
         "fonts/PingFangSC-Semibold.ttf",
     ]
@@ -157,6 +159,7 @@ def find_font_path(bold=False) -> Optional[str]:
         ]
     else:
         system_regular = [
+            "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
             "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
             "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.otf",
             "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
@@ -168,12 +171,14 @@ def find_font_path(bold=False) -> Optional[str]:
         ]
 
         system_bold = [
+            "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
             "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
             "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.otf",
             "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
             "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.otf",
             "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Bold.otf",
             "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
             "/usr/share/fonts/truetype/arphic/uming.ttc",
             "/System/Library/Fonts/PingFang.ttc",
             "/System/Library/Fonts/STHeiti Medium.ttc",
@@ -199,7 +204,7 @@ def get_font(size: int, bold: bool = False):
     if not path:
         raise RuntimeError(
             "没有找到中文字体。"
-            "如果是 Streamlit Cloud，请确认仓库里有 packages.txt，内容包含 fonts-noto-cjk 和 fontconfig。"
+            "如果是 Streamlit Cloud，请确认仓库里有 packages.txt，内容包含 fonts-wqy-microhei、fonts-noto-cjk 和 fontconfig。"
             "如果是本地 Windows，请确认系统有微软雅黑。"
         )
 
@@ -284,18 +289,19 @@ def calc_line_height_px(p, kind: str, font_px: int) -> int:
     line_spacing, _, _ = get_effective_para_format(p)
 
     if line_spacing is None:
-        return int(font_px * DEFAULT_LINE_RATIO.get(kind, 1.52))
+        return int(font_px * DEFAULT_LINE_RATIO.get(kind, 1.62))
 
     # Word 倍数行距，例如 1.0 / 1.15 / 1.5 / 2.0
     if isinstance(line_spacing, float):
-        return int(font_px * line_spacing)
+        # 防止 Word 里设置过小导致图片行距太挤
+        return max(int(font_px * line_spacing), int(font_px * 1.28))
 
     # Word 固定值行距
     px = length_to_px(line_spacing)
     if px:
-        return px
+        return max(px, int(font_px * 1.28))
 
-    return int(font_px * DEFAULT_LINE_RATIO.get(kind, 1.52))
+    return int(font_px * DEFAULT_LINE_RATIO.get(kind, 1.62))
 
 
 def calc_space_before_after_px(p, kind: str) -> Tuple[int, int]:
@@ -314,31 +320,26 @@ def calc_space_before_after_px(p, kind: str) -> Tuple[int, int]:
         before_px = DEFAULT_SPACE_BEFORE.get(kind, 0)
 
     if after_px is None:
-        after_px = DEFAULT_SPACE_AFTER.get(kind, 22)
+        after_px = DEFAULT_SPACE_AFTER.get(kind, 32)
 
     return int(before_px), int(after_px)
 
 
 def get_effective_run_font_size_px(run, p, kind: str) -> int:
-    # 标题 / 小标题不跟 Word 原字号走，直接用模板字号
-    if kind in ["title", "h1", "h2"]:
-        return DEFAULT_FONT_PX[kind]
+    """
+    最终视觉字号由模板控制，不再完全读取 Word 原字号。
+    Word 原字号太小会导致高清图里变成蚂蚁字。
+    """
+    if kind == "title":
+        return DEFAULT_FONT_PX["title"]
 
-    size = run.font.size
+    if kind == "h1":
+        return DEFAULT_FONT_PX["h1"]
 
-    if size is not None:
-        try:
-            return max(20, int(size.pt * PT_TO_PX_SCALE))
-        except Exception:
-            pass
+    if kind == "h2":
+        return DEFAULT_FONT_PX["h2"]
 
-    try:
-        if p.style and p.style.font and p.style.font.size:
-            return max(20, int(p.style.font.size.pt * PT_TO_PX_SCALE))
-    except Exception:
-        pass
-
-    return DEFAULT_FONT_PX.get(kind, DEFAULT_FONT_PX["body"])
+    return DEFAULT_FONT_PX["body"]
 
 
 def map_highlight(color) -> Optional[str]:
@@ -696,6 +697,26 @@ def get_line_max_font_size(line: List[Chunk]) -> int:
     )
 
 
+def draw_text(draw: ImageDraw.ImageDraw, position, text: str, font, bold: bool):
+    x, y = position
+
+    draw.text(
+        (x, y),
+        text,
+        font=font,
+        fill=TEXT_COLOR,
+    )
+
+    # 云端字体粗体不稳定时，用轻微偏移模拟加粗
+    if bold:
+        draw.text(
+            (x + 1, y),
+            text,
+            font=font,
+            fill=TEXT_COLOR,
+        )
+
+
 def draw_line(draw: ImageDraw.ImageDraw, line: List[Chunk], x: int, y: int):
     cursor_x = x
 
@@ -768,11 +789,12 @@ def draw_line(draw: ImageDraw.ImageDraw, line: List[Chunk], x: int, y: int):
         font = get_font(font_size, chunk.bold)
         w = text_width(chunk.text, font)
 
-        draw.text(
-            (cursor_x, y),
-            chunk.text,
+        draw_text(
+            draw=draw,
+            position=(cursor_x, y),
+            text=chunk.text,
             font=font,
-            fill=TEXT_COLOR,
+            bold=chunk.bold,
         )
 
         cursor_x += w
@@ -881,7 +903,7 @@ st.set_page_config(
 )
 
 st.title("Word 转高清备忘录长图")
-st.caption("固定 2160×2880，3:4；标题走备忘录模板，正文读取 Word 行距、段前、段后。")
+st.caption("固定 2160×2880，3:4；标题走备忘录模板，正文按模板字号排版，保留 Word 段落结构和样式。")
 
 uploaded_file = st.file_uploader("上传 Word 文件（.docx）", type=["docx"])
 
@@ -892,7 +914,7 @@ st.markdown(
 - `标题 / 标题1`：转成备忘录大标题版式。
 - `标题2`：转成一级小标题。
 - `标题3`：转成二级小标题。
-- 正文：尽量读取 Word 的字号、行距、段前、段后。
+- 正文：使用备忘录模板字号，避免生成后字太小。
 - 直接按 `Enter`：新段落，程序会读取段前 / 段后。
 - 按 `Shift + Enter`：同段换行，只走普通行距。
 - 加粗：保留加粗。
@@ -900,7 +922,7 @@ st.markdown(
 - 黄色高亮：转成黄色荧光笔线。
 - 蓝色高亮：转成蓝色圆角底块。
 - 绿色高亮：转成绿色荧光线。
-- 本地 Windows 默认使用微软雅黑；网页部署默认使用 Noto CJK 中文字体。
+- 本地 Windows 默认使用微软雅黑；网页部署默认使用文泉驿 / Noto CJK 中文字体。
 """
 )
 
